@@ -450,6 +450,162 @@ def _command_registry(session: CodingSession) -> CommandRegistry:
     return create_default_command_registry()
 
 
+async def _start_new_session(session: CodingSession, console: Console) -> None:
+    try:
+        message = await session.new_session()
+    except Exception as exc:  # noqa: BLE001 - surface session failures in the REPL
+        console.print(Text(f"Could not start a new session: {exc}", style="red"))
+        return
+    console.print(Text(message, style="green"))
+    console.print(_session_footer(session))
+
+
+async def _compact_session(
+    session: CodingSession,
+    instructions: str,
+    console: Console,
+) -> None:
+    console.print(Text("Compacting context...", style="bright_black"))
+    try:
+        message = await session.compact(instructions or None)
+    except Exception as exc:  # noqa: BLE001 - surface compaction failures in the REPL
+        console.print(Text(f"Could not compact session: {exc}", style="red"))
+        return
+    console.print(Text(message, style="green"))
+    console.print(_session_footer(session))
+
+
+async def _export_session(
+    session: CodingSession,
+    destination: Path | None,
+    export_format: str | None,
+    console: Console,
+) -> None:
+    try:
+        output_path = await session.export(destination, format=export_format)
+    except Exception as exc:  # noqa: BLE001 - surface export failures in the REPL
+        console.print(Text(f"Could not export session: {exc}", style="red"))
+        return
+    console.print(Text(f"Exported session to {output_path}", style="green"))
+
+
+async def _resume_session(
+    session: CodingSession,
+    session_id: str,
+    console: Console,
+) -> None:
+    try:
+        message = await session.resume(session_id)
+    except Exception as exc:  # noqa: BLE001 - surface resume failures in the REPL
+        console.print(Text(f"Could not resume session: {exc}", style="red"))
+        return
+    console.print(Text(message, style="green"))
+    console.print(_session_footer(session))
+
+
+async def _pick_session(session: CodingSession, console: Console) -> None:
+    manager = session.session_manager
+    if manager is None:
+        console.print(Text("Session manager is not available.", style="yellow"))
+        return
+    try:
+        records = tuple(manager.list_sessions(session.cwd))
+    except Exception as exc:  # noqa: BLE001 - surface session-list failures in the REPL
+        console.print(Text(f"Could not list sessions: {exc}", style="red"))
+        return
+    if not records:
+        console.print(Text("No sessions found.", style="yellow"))
+        return
+    console.print(Text("Sessions", style="bold cyan"))
+    for index, record in enumerate(records, start=1):
+        title = record.title or "Untitled session"
+        marker = "*" if record.id == session.session_id else " "
+        console.print(Text(f" {marker} {index:>2}. {title}  {record.model or ''}  {record.id}"))
+    answer = await _read_line(console, "Select session number (blank to cancel): ")
+    if not answer:
+        return
+    if not answer.isdigit() or not (1 <= int(answer) <= len(records)):
+        console.print(Text(f"Unknown session selection: {answer}", style="red"))
+        return
+    await _resume_session(session, records[int(answer) - 1].id, console)
+
+
+async def _pick_tree_entry(session: CodingSession, console: Console) -> None:
+    try:
+        choices = tuple(await session.tree_choices())
+    except Exception as exc:  # noqa: BLE001 - surface tree failures in the REPL
+        console.print(Text(f"Could not read session tree: {exc}", style="red"))
+        return
+    if not choices:
+        console.print(Text("No session entries are available for branching.", style="yellow"))
+        return
+    console.print(Text("Session tree", style="bold cyan"))
+    for index, choice in enumerate(choices, start=1):
+        marker = "*" if choice.active else " "
+        console.print(Text(f" {marker} {index:>2}. {choice.label}"))
+    answer = await _read_line(console, "Branch from entry number (blank to cancel): ")
+    if not answer:
+        return
+    if not answer.isdigit() or not (1 <= int(answer) <= len(choices)):
+        console.print(Text(f"Unknown tree selection: {answer}", style="red"))
+        return
+    choice = choices[int(answer) - 1]
+    try:
+        result = await session.branch_to_entry(choice.entry_id)
+    except Exception as exc:  # noqa: BLE001 - surface branch failures in the REPL
+        console.print(Text(f"Could not branch session: {exc}", style="red"))
+        return
+    console.print(Text(result.message, style="green"))
+    if result.input_prefill:
+        console.print(Text(f"Suggested prompt: {result.input_prefill}", style="bright_black"))
+
+
+async def _read_line(console: Console, prompt: str) -> str | None:
+    try:
+        answer = await anyio.to_thread.run_sync(console.input, prompt)
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return None
+    return answer.strip()
+
+
+def _print_tools(session: CodingSession, console: Console) -> None:
+    if not session.tools:
+        console.print(Text("No tools are loaded.", style="yellow"))
+        return
+    console.print(Text("Tools", style="bold cyan"))
+    for tool in session.tools:
+        description = getattr(tool, "description", None)
+        line = Text(f"  {tool.name}")
+        if description:
+            line.append(f"  {description}", style="bright_black")
+        console.print(line)
+
+
+def _print_skills(session: CodingSession, console: Console) -> None:
+    if not session.skills:
+        console.print(Text("No skills are loaded.", style="yellow"))
+        return
+    console.print(Text("Skills", style="bold cyan"))
+    for skill in session.skills:
+        line = Text(f"  /skill:{skill.name}")
+        if skill.description:
+            line.append(f"  {skill.description}", style="bright_black")
+        console.print(line)
+
+
+def _print_prompts(session: CodingSession, console: Console) -> None:
+    if not session.prompt_templates:
+        console.print(Text("No prompt templates are loaded.", style="yellow"))
+        return
+    console.print(Text("Prompt templates", style="bold cyan"))
+    for template in session.prompt_templates:
+        line = Text(f"  /{template.name}")
+        if template.description:
+            line.append(f"  {template.description}", style="bright_black")
+        console.print(line)
+
+
 async def _pick_model(session: CodingSession, console: Console) -> None:
     choices = _available_model_choices(session)
     if not choices:
@@ -597,6 +753,38 @@ async def _handle_text_input(
         return "unhandled"
     if command.exit_requested:
         return "exit"
+    if command.new_session_requested:
+        await _start_new_session(session, console)
+        return "handled"
+    if command.compact_summary is not None:
+        await _compact_session(session, command.compact_summary, console)
+        return "handled"
+    if command.export_requested:
+        await _export_session(
+            session,
+            command.export_destination,
+            command.export_format,
+            console,
+        )
+        return "handled"
+    if command.resume_session_id is not None:
+        await _resume_session(session, command.resume_session_id, console)
+        return "handled"
+    if command.resume_picker_requested:
+        await _pick_session(session, console)
+        return "handled"
+    if command.tree_picker_requested:
+        await _pick_tree_entry(session, console)
+        return "handled"
+    if command.tools_picker_requested:
+        _print_tools(session, console)
+        return "handled"
+    if command.skills_picker_requested:
+        _print_skills(session, console)
+        return "handled"
+    if command.prompts_picker_requested:
+        _print_prompts(session, console)
+        return "handled"
     if command.model_picker_requested:
         await _pick_model(session, console)
         return "handled"
@@ -646,6 +834,18 @@ async def _handle_text_input(
         return "handled"
     if command.message:
         console.print(Text(command.message))
+        return "handled"
+    if command.theme_picker_requested or command.theme is not None:
+        console.print(
+            Text(
+                "Rich UI uses your terminal colors. Textual themes are available "
+                "only with `tau --ui textual`.",
+                style="yellow",
+            )
+        )
+        return "handled"
+    if command.sidebar_toggle_requested:
+        console.print(Text("The sidebar is not available in Rich UI mode.", style="yellow"))
         return "handled"
     console.print(Text("This command is only available in the Textual UI.", style="yellow"))
     return "handled"

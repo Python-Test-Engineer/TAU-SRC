@@ -38,8 +38,9 @@ Precedence is:
 ```text
 1. --ui textual|rich
 2. TAU_UI
-3. ~/.tau/settings.json  {"ui": "..."}
-4. default: textual
+3. <repo>/.tau/settings.json  {"ui": "..."}
+4. ~/.tau/settings.json       {"ui": "..."}
+5. default: textual
 ```
 
 `textual` is the default so existing users see no change after upgrading.
@@ -56,6 +57,16 @@ Tau has several user-level JSON files:
 ```
 
 The UI choice cannot live in `tui.json` because that file is loaded *inside* the Textual app. Tau must know whether to start the Textual app at all before `tui.json` is relevant. `settings.json` is the general, frontend-neutral location, so the Rich/Textual choice belongs there.
+
+A repo can override the user choice with:
+
+```text
+<repo>/.tau/settings.json
+```
+
+This is useful for a project that wants contributors to start in the Rich UI
+regardless of their personal `~/.tau/settings.json`. A repo file without a
+`"ui"` key falls through to the user setting.
 
 The existing shell-settings parser ignores unknown fields. That means the new `"ui"` field can coexist in `settings.json` without changing shell behavior.
 
@@ -194,10 +205,17 @@ Rich mode handles the commands that make sense in a line-oriented UI:
 - `/exit` and `/quit`
 - `/clear`
 - `/reload`
+- `/new`
+- `/compact [instructions]`
+- `/export [--format html|jsonl] [destination]`
+- `/resume [session-id]` and a numbered session picker when no id is given
+- `/tree` with a numbered branch-entry picker
 - `/model` with a numbered provider/model picker
 - `/model provider:model`
 - `/thinking <level>`
 - `/scoped-models` lists the scoped models
+- `/tools`, `/skills`, and `/prompts` list the loaded resources
+- `/session`, `/system`, `/help`, `/hotkeys`, and other message-only commands
 - session renaming
 - commands that return a plain message
 
@@ -205,8 +223,8 @@ Command names and aliases autocomplete while typing. For example, typing `/mo`
 shows `/model` with its description; pressing Tab or Enter accepts the highlighted
 completion.
 
-Commands that still require a Textual screen — such as login/logout, resume/tree pickers,
-theme selection, local-backend setup, the sidebar toggle, and extension widgets — print:
+Commands that still require a Textual screen — such as login/logout, theme
+selection, local-backend setup, the sidebar toggle, and extension widgets — print:
 
 ```text
 This command is only available in the Textual UI.

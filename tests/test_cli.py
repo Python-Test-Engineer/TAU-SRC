@@ -37,6 +37,13 @@ from tau_coding.update_check import (
 )
 from tau_coding.updater import UpdateResult
 
+
+@pytest.fixture(autouse=True)
+def isolate_interactive_ui_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep CLI tests independent of a developer's repo-local .tau UI setting."""
+    monkeypatch.setenv("TAU_UI", "textual")
+
+
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
@@ -2232,6 +2239,7 @@ def test_cli_ui_reads_rich_from_settings(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("TAU_HOME", str(tau_home))
+    monkeypatch.delenv("TAU_UI", raising=False)
     monkeypatch.setattr(cli, "_startup_update_notice", lambda: None)
     monkeypatch.setattr(cli, "run_openai_tui", fake_run_openai_tui)
     monkeypatch.setattr(cli, "run_openai_rich", fake_run_openai_rich)
@@ -2269,6 +2277,39 @@ def test_cli_ui_flag_overrides_environment_and_settings(
 
     assert result.exit_code == 0
     assert calls == ["textual"]
+
+
+def test_cli_repo_ui_setting_overrides_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tau_home = tmp_path / ".tau-home"
+    tau_home.mkdir()
+    (tau_home / "settings.json").write_text('{"ui": "textual"}', encoding="utf-8")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".tau").mkdir()
+    (repo / ".tau" / "settings.json").write_text('{"ui": "rich"}', encoding="utf-8")
+    calls: list[str] = []
+
+    async def fake_run_openai_tui(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("textual")
+
+    async def fake_run_openai_rich(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("rich")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("TAU_HOME", str(tau_home))
+    monkeypatch.delenv("TAU_UI", raising=False)
+    monkeypatch.setattr(cli, "_startup_update_notice", lambda: None)
+    monkeypatch.setattr(cli, "run_openai_tui", fake_run_openai_tui)
+    monkeypatch.setattr(cli, "run_openai_rich", fake_run_openai_rich)
+
+    result = CliRunner().invoke(app, ["--new-session"])
+
+    assert result.exit_code == 0
+    assert calls == ["rich"]
 
 
 def test_cli_rejects_unknown_ui(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

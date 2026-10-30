@@ -3,7 +3,8 @@
 Tau supports print mode, Pi-compatible JSONL RPC mode, and two interactive
 frontends: the full Textual TUI and a Rich scrollback REPL. `tau` opens the
 Textual TUI by default; use `--ui rich`, `TAU_UI=rich`, or `"ui": "rich"` in
-`~/.tau/settings.json` to select Rich. Print mode is selected with `-p/--print`
+`~/.tau/settings.json` to select Rich. A repository can override the user
+setting in `<repo>/.tau/settings.json`. Print mode is selected with `-p/--print`
 or `--mode` and uses the same staged session/provider preparation as the
 interactive frontends. The CLI entry point is `tau_coding.cli:app`.
 

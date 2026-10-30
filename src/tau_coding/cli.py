@@ -563,7 +563,7 @@ def main(
         # A due PyPI check runs in the background once the interactive UI is up.
         notice = _cached_startup_update_notice()
         try:
-            ui_mode = resolve_ui_mode(ui)
+            ui_mode = resolve_ui_mode(ui, cwd=cwd or Path.cwd())
             tui_args = (
                 model,
                 cwd or Path.cwd(),

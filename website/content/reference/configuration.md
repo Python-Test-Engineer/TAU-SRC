@@ -69,7 +69,9 @@ Tau also reads user-level `.agents` resources: `~/.agents/skills/`,
 
 `settings.json` may contain `"ui": "textual" | "rich"` to choose the
 interactive frontend. The default is `textual`; `rich` starts the smaller
-scrollback REPL. `TAU_UI` overrides this file, and `--ui` overrides both. See
+scrollback REPL. A project can override the user setting with
+`<repo>/.tau/settings.json`. Precedence is `--ui`, then `TAU_UI`, then the
+project file, then `~/.tau/settings.json`. See
 [The interactive session](/guides/tui/#rich-ui-mode).
 
 `settings.json` may also contain `"defaultProjectTrust": "ask" | "always" |
