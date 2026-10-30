@@ -11,9 +11,9 @@ see [Keyboard shortcuts](/reference/keybindings/).
 
 Tau also includes a smaller Rich-based scrollback REPL. Select it for one run
 with `tau --ui rich`, set `TAU_UI=rich`, or add `"ui": "rich"` to
-`~/.tau/settings.json`. The Rich mode supports prompting, streaming status,
-tool output, Markdown replies, terminal commands, `/reload`, `/clear`, and session
-renaming. Textual-only features such as pickers, modals, the sidebar, and
+`~/.tau/settings.json`. The Rich mode supports prompting, slash-command autocomplete,
+streaming status, tool output, Markdown replies, terminal commands, `/model`,
+`/thinking`, `/reload`, `/clear`, and session renaming. Textual-only features such as pickers, modals, the sidebar, and
 extension widgets remain available only with the default `textual` frontend.
 
 ## Sending a prompt

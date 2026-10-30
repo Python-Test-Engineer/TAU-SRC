@@ -8,16 +8,22 @@ prompt. The Textual frontend remains the full-featured option.
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Mapping, Sequence
+from inspect import isawaitable
 from pathlib import Path
 from typing import Literal
 
 import anyio
-from rich.console import Console
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.shortcuts import CompleteStyle
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.status import Status
+from rich.table import Table
 from rich.text import Text
 
 from tau_agent.events import (
@@ -33,6 +39,7 @@ from tau_agent.events import (
 from tau_agent.messages import AssistantMessage, CustomMessage, UserMessage
 from tau_agent.types import JSONValue
 from tau_ai.events import TextDeltaEvent, ThinkingDeltaEvent
+from tau_coding.commands import CommandRegistry, create_default_command_registry
 from tau_coding.events import (
     AutoRetryEndEvent,
     AutoRetryStartEvent,
@@ -52,9 +59,11 @@ from tau_coding.provider_config import (
     resolve_startup_thinking_level,
 )
 from tau_coding.provider_runtime import ClosableModelProvider, create_model_provider
+from tau_coding.rich_autocomplete import CommandCompleter
 from tau_coding.session import (
     CodingSession,
     CodingSessionConfig,
+    ModelChoice,
     jsonl_session_storage,
     parse_terminal_command,
 )
@@ -278,12 +287,19 @@ async def run_rich_ui(
 
         console = Console()
         ui = RichSessionUi(console)
+        prompt_session: PromptSession[str] = PromptSession(
+            completer=CommandCompleter(_command_registry(session)),
+            complete_while_typing=True,
+            complete_style=CompleteStyle.MULTI_COLUMN,
+            reserve_space_for_menu=8,
+        )
         for notice in (
             *((startup_notice,) if startup_notice else ()),
             *((startup_update_notice,) if startup_update_notice else ()),
             *startup_notices,
         ):
             console.print(Text(notice, style="bright_black"))
+        console.print(_session_footer(session))
 
         pending_prompt = initial_prompt.strip() if initial_prompt else ""
         while True:
@@ -292,7 +308,7 @@ async def run_rich_ui(
                 pending_prompt = ""
             else:
                 try:
-                    text = await anyio.to_thread.run_sync(_read_prompt, console)
+                    text = await _read_prompt(console, session, prompt_session)
                 except EOFError:
                     break
                 except KeyboardInterrupt:
@@ -326,12 +342,236 @@ async def run_rich_ui(
     return active_session_id
 
 
-def _read_prompt(console: Console) -> str:
+async def _read_prompt(
+    console: Console,
+    session: CodingSession,
+    prompt_session: PromptSession[str],
+) -> str:
     console.print(Rule(style="white"))
     try:
-        return console.input("[bold cyan]TAU>[/] ")
+        return await prompt_session.prompt_async(HTML("<b><ansicyan>TAU&gt;</ansicyan></b> "))
     finally:
         console.print(Rule(style="white"))
+        console.print(_session_footer(session))
+
+
+def _session_footer(session: CodingSession) -> Group:
+    model_line = Text(overflow="fold", no_wrap=False)
+    model_line.append(str(session.provider_name), style="bright_black")
+    model_line.append(f":{session.model}", style="cyan")
+    thinking = _thinking_level(session)
+    if thinking is not None:
+        model_line.append(f" ({thinking})", style="bright_black")
+    context = Text(
+        _context_usage(session),
+        style="bright_black",
+        no_wrap=True,
+        justify="right",
+    )
+    second_line = Table.grid(expand=True)
+    second_line.add_column(ratio=1)
+    second_line.add_column(justify="right", no_wrap=True)
+    second_line.add_row(model_line, context)
+    return Group(_styled_cwd(session.cwd), second_line)
+
+
+def _context_usage(session: CodingSession) -> str:
+    threshold = session.auto_compact_token_threshold
+    limit = session.context_window_tokens if threshold is None or threshold <= 0 else threshold
+    used = (
+        _compact_token_count(session.context_token_estimate)
+        if session.has_provider_context_usage
+        else "?"
+    )
+    return f"{used}/{_compact_token_count(limit)}"
+
+
+def _compact_token_count(value: int) -> str:
+    if value <= 0:
+        return "0k"
+    if value < 1000:
+        return "<1k"
+    return f"{(value + 500) // 1000}k"
+
+
+def _thinking_level(session: CodingSession) -> str | None:
+    available = getattr(session, "available_thinking_levels", None)
+    if available == ():
+        return None
+    explicit_level = getattr(session, "thinking_level", None)
+    if explicit_level:
+        return str(explicit_level)
+    state = getattr(session, "state", None)
+    thinking_level = getattr(state, "thinking_level", None)
+    return str(thinking_level) if thinking_level else "--"
+
+
+def _styled_cwd(cwd: Path) -> Text:
+    short_path = _short_path(cwd)
+    parent, separator, name = short_path.rpartition("/")
+    text = Text(overflow="fold", no_wrap=False)
+    if separator and name:
+        text.append(f"{parent}{separator}", style="bright_black")
+        text.append(name, style="cyan")
+    else:
+        text.append(short_path, style="cyan")
+    branch = _git_branch(cwd)
+    if branch:
+        text.append(f" ({branch})", style="bright_black")
+    return text
+
+
+def _short_path(path: Path) -> str:
+    try:
+        return f"~/{path.relative_to(Path.home())}"
+    except ValueError:
+        return str(path)
+
+
+def _git_branch(cwd: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(cwd), "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    branch = result.stdout.strip()
+    return branch or None
+
+
+def _command_registry(session: CodingSession) -> CommandRegistry:
+    registry = getattr(session, "command_registry", None)
+    if isinstance(registry, CommandRegistry):
+        return registry
+    return create_default_command_registry()
+
+
+async def _pick_model(session: CodingSession, console: Console) -> None:
+    choices = _available_model_choices(session)
+    if not choices:
+        console.print(Text("No usable models are available.", style="yellow"))
+        return
+    current = ModelChoice(provider_name=session.provider_name, model=session.model)
+    console.print(Text("Models", style="bold cyan"))
+    for index, choice in enumerate(choices, start=1):
+        marker = "*" if choice == current else " "
+        console.print(Text(f" {marker} {index:>2}. {choice.provider_name}:{choice.model}"))
+    try:
+        answer = await anyio.to_thread.run_sync(
+            console.input,
+            "Select model number or provider:model (blank to cancel): ",
+        )
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return
+    answer = answer.strip()
+    if not answer:
+        return
+    selected = _match_model_choice(choices, answer)
+    if selected is None:
+        console.print(Text(f"Unknown model: {answer}", style="red"))
+        return
+    await _apply_model_choice(session, selected, console)
+
+
+def _available_model_choices(session: CodingSession) -> tuple[ModelChoice, ...]:
+    choices = tuple(getattr(session, "available_model_choices", ()))
+    if choices:
+        return choices
+    return tuple(
+        ModelChoice(provider_name=session.provider_name, model=model)
+        for model in session.available_models
+    )
+
+
+def _match_model_choice(
+    choices: Sequence[ModelChoice],
+    answer: str,
+) -> ModelChoice | None:
+    if answer.isdigit():
+        index = int(answer) - 1
+        if 0 <= index < len(choices):
+            return choices[index]
+        return None
+    for choice in choices:
+        if answer in {choice.model, f"{choice.provider_name}:{choice.model}"}:
+            return choice
+    folded = answer.casefold()
+    for choice in choices:
+        if folded in {
+            choice.model.casefold(),
+            f"{choice.provider_name}:{choice.model}".casefold(),
+        }:
+            return choice
+    return None
+
+
+async def _apply_model_choice(
+    session: CodingSession,
+    choice: ModelChoice,
+    console: Console,
+) -> None:
+    try:
+        preview = getattr(session, "preview_model_choice", None)
+        if preview is not None:
+            preview(choice)
+        else:
+            select = getattr(session, "select_provider_model", None)
+            if select is not None:
+                result = select(choice)
+                if isawaitable(result):
+                    await result
+            else:
+                set_choice = getattr(session, "set_model_choice", None)
+                if set_choice is not None:
+                    set_choice(choice)
+                else:
+                    session.set_model(choice.model)
+    except Exception as exc:  # noqa: BLE001 - surface session failures in the REPL
+        console.print(Text(f"Could not switch model: {exc}", style="red"))
+        return
+    console.print(Text(f"Current model: {choice.provider_name}:{choice.model}", style="green"))
+
+
+async def _apply_thinking_level(
+    session: CodingSession,
+    level: str,
+    console: Console,
+) -> None:
+    try:
+        setter = getattr(session, "preview_thinking_level", None)
+        if setter is None:
+            setter = getattr(session, "set_thinking_level", None)
+        if setter is None:
+            console.print(Text("Thinking controls are not available.", style="yellow"))
+            return
+        result = setter(level)
+        if isawaitable(result):
+            await result
+    except Exception as exc:  # noqa: BLE001 - surface session failures in the REPL
+        console.print(Text(f"Could not set thinking level: {exc}", style="red"))
+        return
+    console.print(Text(f"Thinking mode: {level}", style="green"))
+
+
+def _print_scoped_models(session: CodingSession, console: Console) -> None:
+    choices = tuple(getattr(session, "scoped_model_choices", ()))
+    if not choices:
+        console.print(
+            Text(
+                "No scoped models are configured. Use the Textual UI to edit scoped models.",
+                style="yellow",
+            )
+        )
+        return
+    console.print(Text("Scoped models", style="bold cyan"))
+    for choice in choices:
+        console.print(Text(f"  {choice.provider_name}:{choice.model}"))
+    console.print(Text("Use /model to switch models.", style="bright_black"))
 
 
 async def _handle_text_input(
@@ -357,6 +597,34 @@ async def _handle_text_input(
         return "unhandled"
     if command.exit_requested:
         return "exit"
+    if command.model_picker_requested:
+        await _pick_model(session, console)
+        return "handled"
+    if command.scoped_models_picker_requested:
+        _print_scoped_models(session, console)
+        return "handled"
+    if command.model_selection_model is not None:
+        await _apply_model_choice(
+            session,
+            ModelChoice(
+                provider_name=command.model_selection_provider or session.provider_name,
+                model=command.model_selection_model,
+            ),
+            console,
+        )
+        return "handled"
+    if command.thinking_level is not None:
+        await _apply_thinking_level(session, command.thinking_level, console)
+        return "handled"
+    if command.theme is not None:
+        console.print(
+            Text(
+                "Rich UI uses your terminal colors. Textual themes are available "
+                "only with `tau --ui textual`.",
+                style="yellow",
+            )
+        )
+        return "handled"
     if command.clear_requested:
         console.clear()
         return "handled"

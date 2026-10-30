@@ -15,6 +15,7 @@ dependencies = [
     "httpx[socks]>=0.27",
     "packaging>=24.0",
     "pillow>=11.0",
+    "prompt-toolkit>=3.0",
     "pydantic>=2.11",
     "pygments>=2.18",
     "rich>=13.0",

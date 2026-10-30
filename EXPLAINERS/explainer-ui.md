@@ -127,7 +127,10 @@ terminal scrollback
 prompt line
   ├── white horizontal rule above
   ├── TAU> input prompt
-  └── white horizontal rule below
+  ├── white horizontal rule below
+  └── session footer:
+        working directory (git branch)
+        provider:model (thinking)        used/limit context
 ```
 
 It uses Rich for:
@@ -138,6 +141,10 @@ It uses Rich for:
 - a `Status` spinner while waiting for or streaming model output
 - red error and retry messages
 - compaction status
+
+Prompt input uses `prompt_toolkit` so typing `/` opens a live completion menu.
+The menu is built from the session's command registry, including aliases and
+extension-registered commands.
 
 It does **not** attempt to reproduce:
 
@@ -187,10 +194,19 @@ Rich mode handles the commands that make sense in a line-oriented UI:
 - `/exit` and `/quit`
 - `/clear`
 - `/reload`
+- `/model` with a numbered provider/model picker
+- `/model provider:model`
+- `/thinking <level>`
+- `/scoped-models` lists the scoped models
 - session renaming
 - commands that return a plain message
 
-Commands that require a Textual picker or modal — such as interactive model/login/theme/session pickers or the sidebar toggle — print:
+Command names and aliases autocomplete while typing. For example, typing `/mo`
+shows `/model` with its description; pressing Tab or Enter accepts the highlighted
+completion.
+
+Commands that still require a Textual screen — such as login/logout, resume/tree pickers,
+theme selection, local-backend setup, the sidebar toggle, and extension widgets — print:
 
 ```text
 This command is only available in the Textual UI.
