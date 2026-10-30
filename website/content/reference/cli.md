@@ -10,7 +10,7 @@ cover everything else.
 tau [OPTIONS] [PROMPT] [COMMAND] [ARGS]
 ```
 
-- With no arguments, `tau` opens the interactive [TUI](/guides/tui/).
+- With no arguments, `tau` opens the interactive [TUI](/guides/tui/). Select the Rich scrollback REPL with `--ui rich`.
 - A positional `PROMPT` opens the TUI and submits it as the first turn.
 - `/local` is available in the TUI for registered local backends; print mode reports that setup is interactive-only.
 - `-p/--print` (or `--mode`) runs that same positional prompt in [print mode](/guides/print-mode/) instead of the TUI.
@@ -51,6 +51,7 @@ features and fixes.
 | `-t, --thinking LEVEL` | Initial [thinking level](/guides/context/#thinking-modes) for this run (`off`…`max`); overrides remembered defaults without persisting, errors if the model doesn't support it |
 | `--cwd PATH` | Working directory for the built-in tools |
 | `--mode [text\|json\|transcript\|rpc]` | Select headless output; `rpc` starts the JSONL subprocess protocol |
+| `--ui [textual\|rich]` | Select the interactive frontend; overrides `TAU_UI` and `settings.json` |
 | `--session TEXT` | Resume a session id in the TUI or print mode |
 | `--new-session` | Start a new session instead of resuming the default |
 | `--session-id TEXT` | Set the exact id for a newly created print-mode session; errors if it already exists |

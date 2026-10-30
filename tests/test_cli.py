@@ -2192,3 +2192,91 @@ def test_help_lists_thinking_option() -> None:
     output = re.sub(r"\s+", "", _strip_ansi(result.output))
     assert result.exit_code == 0
     assert "--thinking" in output
+
+
+def test_cli_ui_defaults_to_textual(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    async def fake_run_openai_tui(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("textual")
+
+    async def fake_run_openai_rich(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("rich")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_startup_update_notice", lambda: None)
+    monkeypatch.setattr(cli, "run_openai_tui", fake_run_openai_tui)
+    monkeypatch.setattr(cli, "run_openai_rich", fake_run_openai_rich)
+
+    result = CliRunner().invoke(app, ["--new-session"])
+
+    assert result.exit_code == 0
+    assert calls == ["textual"]
+
+
+def test_cli_ui_reads_rich_from_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    tau_home = tmp_path / ".tau"
+    tau_home.mkdir()
+    (tau_home / "settings.json").write_text('{"ui": "rich"}', encoding="utf-8")
+    calls: list[str] = []
+
+    async def fake_run_openai_tui(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("textual")
+
+    async def fake_run_openai_rich(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("rich")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TAU_HOME", str(tau_home))
+    monkeypatch.setattr(cli, "_startup_update_notice", lambda: None)
+    monkeypatch.setattr(cli, "run_openai_tui", fake_run_openai_tui)
+    monkeypatch.setattr(cli, "run_openai_rich", fake_run_openai_rich)
+
+    result = CliRunner().invoke(app, ["--new-session"])
+
+    assert result.exit_code == 0
+    assert calls == ["rich"]
+
+
+def test_cli_ui_flag_overrides_environment_and_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tau_home = tmp_path / ".tau"
+    tau_home.mkdir()
+    (tau_home / "settings.json").write_text('{"ui": "rich"}', encoding="utf-8")
+    calls: list[str] = []
+
+    async def fake_run_openai_tui(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("textual")
+
+    async def fake_run_openai_rich(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        calls.append("rich")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TAU_HOME", str(tau_home))
+    monkeypatch.setenv("TAU_UI", "rich")
+    monkeypatch.setattr(cli, "_startup_update_notice", lambda: None)
+    monkeypatch.setattr(cli, "run_openai_tui", fake_run_openai_tui)
+    monkeypatch.setattr(cli, "run_openai_rich", fake_run_openai_rich)
+
+    result = CliRunner().invoke(app, ["--ui", "textual", "--new-session"])
+
+    assert result.exit_code == 0
+    assert calls == ["textual"]
+
+
+def test_cli_rejects_unknown_ui(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_startup_update_notice", lambda: None)
+
+    result = CliRunner().invoke(app, ["--ui", "web", "--new-session"])
+
+    assert result.exit_code == 2
+    assert "textual" in result.output
+    assert "rich" in result.output

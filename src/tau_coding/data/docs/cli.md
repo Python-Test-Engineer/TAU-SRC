@@ -1,9 +1,11 @@
 # Tau CLI and commands
 
-Tau supports print mode, Pi-compatible JSONL RPC mode, and a Textual interactive
-TUI. `tau` opens the TUI by default. Print mode is selected with `-p/--print` or
-`--mode` and uses the same staged session/provider preparation as the TUI. The
-CLI entry point is `tau_coding.cli:app`.
+Tau supports print mode, Pi-compatible JSONL RPC mode, and two interactive
+frontends: the full Textual TUI and a Rich scrollback REPL. `tau` opens the
+Textual TUI by default; use `--ui rich`, `TAU_UI=rich`, or `"ui": "rich"` in
+`~/.tau/settings.json` to select Rich. Print mode is selected with `-p/--print`
+or `--mode` and uses the same staged session/provider preparation as the
+interactive frontends. The CLI entry point is `tau_coding.cli:app`.
 
 ## Local inference
 
@@ -32,7 +34,9 @@ state and credential storage, Doctor, reset, and troubleshooting.
 tau [OPTIONS] [PROMPT]
 ```
 
-- `-p, --print`: run one prompt without the TUI.
+- `-p, --print`: run one prompt without the interactive UI.
+- `--ui textual|rich`: choose the interactive frontend; overrides `TAU_UI` and
+  `~/.tau/settings.json`.
 - `--mode text|json|transcript`: choose print output and imply print mode.
 - `--provider NAME`: select an explicit provider.
 - `-m, --model ID`: select an explicit model.

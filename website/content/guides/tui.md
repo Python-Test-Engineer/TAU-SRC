@@ -7,6 +7,15 @@ Running `tau` with no arguments opens the interactive terminal UI (TUI). This is
 where most work happens. This guide covers the moving parts; for the exact keys
 see [Keyboard shortcuts](/reference/keybindings/).
 
+## Rich UI mode
+
+Tau also includes a smaller Rich-based scrollback REPL. Select it for one run
+with `tau --ui rich`, set `TAU_UI=rich`, or add `"ui": "rich"` to
+`~/.tau/settings.json`. The Rich mode supports prompting, streaming status,
+tool output, Markdown replies, terminal commands, `/reload`, `/clear`, and session
+renaming. Textual-only features such as pickers, modals, the sidebar, and
+extension widgets remain available only with the default `textual` frontend.
+
 ## Sending a prompt
 
 Type into the prompt box at the bottom and press **Enter** to submit. The editor

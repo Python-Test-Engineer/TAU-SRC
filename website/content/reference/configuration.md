@@ -51,7 +51,7 @@ launching `tau`.
 ├── codex-models-store.json # account-scoped Codex model snapshot
 ├── credentials.json    # saved API keys / OAuth tokens (0600, atomic writes)
 ├── state/extensions/    # built-in integration state, including llama.cpp
-├── settings.json       # general settings (trust default, shell prefix)
+├── settings.json       # general settings (interactive UI, trust default, shell prefix)
 ├── trust.json          # versioned project-input trust decisions
 ├── tui.json            # TUI theme, keybindings, and layout
 ├── sessions/           # saved sessions, per project
@@ -67,7 +67,12 @@ launching `tau`.
 Tau also reads user-level `.agents` resources: `~/.agents/skills/`,
 `~/.agents/prompts/`, `~/.agents/AGENTS.md`.
 
-`settings.json` may contain `"defaultProjectTrust": "ask" | "always" |
+`settings.json` may contain `"ui": "textual" | "rich"` to choose the
+interactive frontend. The default is `textual`; `rich` starts the smaller
+scrollback REPL. `TAU_UI` overrides this file, and `--ui` overrides both. See
+[The interactive session](/guides/tui/#rich-ui-mode).
+
+`settings.json` may also contain `"defaultProjectTrust": "ask" | "always" |
 "never"`. It is user-global only; a project cannot choose its own trust
 policy. The default is `ask`. Interactive `ask` opens the trust modal; headless
 `ask` safely declines. `trust.json` is managed atomically by Tau; do not add

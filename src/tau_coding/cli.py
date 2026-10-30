@@ -69,6 +69,7 @@ from tau_coding.session_preparation import prepare_coding_session
 from tau_coding.shell_config import load_shell_settings
 from tau_coding.thinking import THINKING_LEVELS, ThinkingLevel, normalize_thinking_level
 from tau_coding.tui import run_tui_app
+from tau_coding.ui_config import resolve_ui_mode
 from tau_coding.update_check import (
     UpdateNotice,
     cached_update_notice,
@@ -272,6 +273,13 @@ def main(
         typer.Option(
             "--mode",
             help="Run headlessly with this output format (text, json, transcript, or rpc).",
+        ),
+    ] = None,
+    ui: Annotated[
+        str | None,
+        typer.Option(
+            "--ui",
+            help="Interactive frontend: textual (full TUI) or rich (scrollback REPL).",
         ),
     ] = None,
     output: Annotated[
@@ -552,9 +560,10 @@ def main(
         raise typer.Exit()
 
     if not print_requested:
-        # A due PyPI check runs in the background once the TUI is up.
+        # A due PyPI check runs in the background once the interactive UI is up.
         notice = _cached_startup_update_notice()
         try:
+            ui_mode = resolve_ui_mode(ui)
             tui_args = (
                 model,
                 cwd or Path.cwd(),
@@ -570,15 +579,16 @@ def main(
                 custom_system_prompt,
                 resolved_append_system_prompt,
             )
-            tui_runner = (
-                partial(run_openai_tui, thinking_level_override=thinking_level_override)
-                if thinking_level_override is not None
-                else run_openai_tui
-            )
+            interactive_runner = run_openai_tui if ui_mode == "textual" else run_openai_rich
+            if thinking_level_override is not None:
+                interactive_runner = partial(
+                    interactive_runner,
+                    thinking_level_override=thinking_level_override,
+                )
             resumable_session_id = (
-                anyio.run(tui_runner, *tui_args)
+                anyio.run(interactive_runner, *tui_args)
                 if trust_override is None
-                else anyio.run(tui_runner, *tui_args, trust_override)
+                else anyio.run(interactive_runner, *tui_args, trust_override)
             )
         except (RuntimeError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
@@ -663,6 +673,49 @@ async def run_openai_tui(
         initial_prompt=initial_prompt,
         startup_update_notice=update_notice.message if update_notice is not None else None,
         deferred_startup_update_notice=deferred_update_notice,
+        startup_notices=startup_notices,
+        extension_paths=extension_paths,
+        extensions_enabled=extensions_enabled,
+        project_extensions_enabled=project_extensions_enabled,
+        custom_system_prompt=custom_system_prompt,
+        append_system_prompt=append_system_prompt,
+        trust_override=trust_override,
+        thinking_level_override=thinking_level_override,
+    )
+
+
+async def run_openai_rich(
+    model: str | None,
+    cwd: Path,
+    session_id: str | None = None,
+    new_session: bool = False,
+    provider_name: str | None = None,
+    auto_compact_token_threshold: int | None = None,
+    initial_prompt: str | None = None,
+    update_notice: UpdateNotice | None = None,
+    extension_paths: tuple[Path, ...] = (),
+    extensions_enabled: bool = True,
+    project_extensions_enabled: bool = False,
+    custom_system_prompt: str | None = None,
+    append_system_prompt: str | None = None,
+    trust_override: TrustOverride | None = None,
+    *,
+    thinking_level_override: ThinkingLevel | None = None,
+) -> str | None:
+    """Run the Rich scrollback REPL and return its resumable session id, if any."""
+    from tau_coding.rich_ui import run_rich_ui
+
+    release_notes_notice = startup_release_notes_notice(_current_version())
+    startup_notices = (release_notes_notice.message,) if release_notes_notice is not None else ()
+    return await run_rich_ui(
+        model=model,
+        cwd=cwd,
+        session_id=session_id,
+        new_session=new_session,
+        provider_name=provider_name,
+        auto_compact_token_threshold=auto_compact_token_threshold,
+        initial_prompt=initial_prompt,
+        startup_update_notice=update_notice.message if update_notice is not None else None,
         startup_notices=startup_notices,
         extension_paths=extension_paths,
         extensions_enabled=extensions_enabled,
