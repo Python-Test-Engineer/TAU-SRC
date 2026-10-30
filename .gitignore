@@ -1,29 +1,70 @@
-# Python-generated files
+# ===========================================================
+# Secrets / local config (never commit)
+# ===========================================================
+.env
+.env*
+**/.env
+**/.env.local
+**/.env.*.local
+
+# The template is tracked on purpose - it holds placeholders only.
+!.env.example
+
+# Local key dumps from other tooling
+OPENROUTER.txt
+HERMES-KEYS.md
+
+# ===========================================================
+# Node (mini-coding-js)
+# ===========================================================
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tsbuildinfo
+
+# ===========================================================
+# Python / uv
+# ===========================================================
+.venv/
+**/.venv/
 __pycache__/
-*.py[oc]
+**/__pycache__/
+*.py[cod]
+*.egg-info/
 build/
 dist/
-wheels/
-*.egg-info
+.pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Virtual environments
-.venv
+# ===========================================================
+# Data / live snapshots (generated, not tracked)
+# ===========================================================
+web_app/data/
+live_bikeshare_*.csv
+*.db
+*.sqlite3
 
-# Website build output and dependencies
-website/public/
-website/resources/
-website/node_modules/
-website/dist/
-website/.astro/
+# Agent sandbox output - uncomment to keep demo artefacts out of git
+# (the .gitkeep placeholder stays tracked)
+#mini-coding-js/workspace/*
+#!mini-coding-js/workspace/.gitkeep
 
-# System files
+# ===========================================================
+# Editor / OS / temp
+# ===========================================================
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
 .DS_Store
-
-# Export artifacts (hex-named test export files)
-[0-9a-f]*.html
-
-# Agent tools
-.firecrawl/
-# Local scratch tooling
-scripts/analyze_session.py
+Thumbs.db
+desktop.ini
+*.log

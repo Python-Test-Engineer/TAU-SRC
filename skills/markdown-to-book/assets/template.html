@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<meta name="description" content="{{DESCRIPTION}}">
+<style>
+/* ============================================================
+   Tau Events explainer — self-contained single-file page
+   Layout: fixed sidebar TOC + reading pane + progress bar
+   Appearance panel edits the CSS custom properties in :root
+   ============================================================ */
+
+/* ---- colours (dark default; light overrides in [data-theme="light"]) ---- */
+:root {
+  --bg: #0f1117;
+  --surface: #161b26;         /* sidebar + chrome */
+  --code-bg: #1a1f2e;
+  --highlight: #20263a;       /* hover / active backgrounds */
+  --ink: #d6dde8;             /* body text */
+  --muted: #8b93a3;           /* secondary text */
+  --code-fg: #c9d4e0;
+  --accent: #e8b339;          /* tau gold */
+  --accent2: #4f9cf0;         /* secondary accent */
+  --line: #2a3042;            /* borders */
+  --ok: #7ed491;
+  --warn: #e5a558;
+  --err: #e5606b;
+  --link: #6fb3ff;
+  --code-str: #a8cf8f;
+  --code-kw: #d59fff;
+  --code-com: #6b7688;
+  --code-num: #dfa1a1;
+  --code-fn: #66b8ff;
+  --code-type: #d599e0;
+  --shadow: rgba(0, 0, 0, .55);
+
+  /* ---- type: the base every other size derives from ---- */
+  --fs: 16px;                 /* book text base */
+  --lh: 1.6;                  /* book line height */
+  --fs-chrome: 13.5px;        /* sidebar + chrome */
+  --lh-chrome: 1.5;
+
+  /* ---- layout ---- */
+  --sidebar-w: 288px;
+  --measure: 68%;             /* reading column width, % of the remaining width */
+
+  /* ---- fonts ---- */
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, "SF Mono", Menlo, monospace;
+
+  /* ---- derived type sizes (recompute when --fs changes) ---- */
+  --fs-h1: calc(var(--fs) * 1.9);
+  --fs-h2: calc(var(--fs) * 1.34);
+  --fs-h3: calc(var(--fs) * 1.07);
+  --fs-table: calc(var(--fs) * 0.9);
+  --fs-pre: calc(var(--fs) * 0.85);
+  --fs-stream: calc(var(--fs) * 0.82);
+}
+
+html[data-theme="light"] {
+  --bg: #f7f6f2;
+  --surface: #ece9e0;
+  --code-bg: #f2efe6;
+  --highlight: #ece5d8;
+  --ink: #2b2f36;
+  --muted: #6d7480;
+  --code-fg: #3a3f47;
+  --accent: #b8860b;
+  --accent2: #1d6fb0;
+  --line: #d5d0c2;
+  --ok: #2c8c49;
+  --warn: #b06f1f;
+  --err: #b3373f;
+  --link: #1a5fb4;
+  --code-str: #557d3a;
+  --code-kw: #8a3fb2;
+  --code-com: #9aa08f;
+  --code-num: #b3495a;
+  --code-fn: #1a6fb4;
+  --code-type: #8a3fb2;
+  --shadow: rgba(0, 0, 0, .25);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  line-height: var(--lh);
+  font-size: var(--fs);
+}
+
+/* ---------- reading progress bar ---------- */
+#progress {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 3px; z-index: 100;
+  background: var(--highlight);
+}
+#progress > span { display: block; height: 100%; width: 0; background: var(--accent); }
+
+/* ---------- layout ---------- */
+#sidebar {
+  position: fixed;
+  top: 0; bottom: 0; left: 0;
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  z-index: 30;
+  font-family: var(--sans);
+  font-size: var(--fs-chrome);
+  line-height: var(--lh-chrome);
+}
+#content {
+  margin-left: var(--sidebar-w);
+  width: calc((100vw - var(--sidebar-w)) * var(--measure));
+  margin-right: auto;
+  padding: 92px 28px 44px;        /* top padding clears the fixed controls bar */
+}
+
+/* ---------- sidebar contents ---------- */
+.side-brand {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  display: flex; gap: 10px; align-items: center;
+}
+.side-brand .tau-mark {
+  width: 34px; height: 34px; flex: none;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 8px;
+  font-weight: 800; font-size: 19px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif);
+}
+.side-brand b { color: var(--ink); font-size: 14.5px; display: block; }
+.side-brand small { color: var(--muted); font-size: 11.5px; }
+
+#toc-search {
+  width: calc(100% - 36px);
+  margin: 10px 18px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+}
+#toc-search::placeholder { color: var(--muted); }
+
+#toc { padding: 4px 18px; }
+#toc a {
+  display: block;
+  text-decoration: none;
+  color: var(--muted);
+  padding: 5px 8px;
+  border-left: 2px solid transparent;
+  border-radius: 4px;
+  line-height: 1.35;
+  transition: color .12s, border-color .12s, background .12s;
+}
+#toc a:hover { color: var(--ink); background: var(--highlight); }
+#toc a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--highlight);
+  font-weight: 600;
+}
+#toc .lvl2 { padding-left: 20px; font-size: 12px; }
+#toc-empty { color: var(--muted); font-size: 12px; display: none; padding: 10px 8px; }
+.chapter.hidden, a.hidden { display: none; }
+
+/* ---------- topbar (mobile) ---------- */
+#topbar {
+  display: none;
+  position: sticky; top: 0; z-index: 40;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 16px;
+}
+#topbar button {
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 11px; font-size: 13px; cursor: pointer;
+  font-family: var(--sans);
+}
+#sidebar.open { display: block; }
+#sidebar.open::after { content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; }
+
+/* ---------- header / prose ---------- */
+h1 {
+  font-size: var(--fs-h1); margin: 0 0 8px;
+  letter-spacing: -.01em;
+  font-family: var(--serif);
+}
+.subtitle { color: var(--muted); font-size: calc(var(--fs) * .92); margin: 0 0 4px; }
+.rule {
+  height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  margin: 26px 0 30px;
+}
+h2 {
+  font-size: var(--fs-h2); margin: 44px 0 10px; padding-top: 14px;
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: 76px;        /* headings clear the fixed controls bar */
+  font-family: var(--serif);
+}
+h2::before { content: "§ "; color: var(--accent); font-size: .8em; }
+h3 { font-size: var(--fs-h3); margin: 26px 0 8px; color: var(--ink); font-family: var(--serif); scroll-margin-top: 76px; }
+h3::before { content: "▸ "; color: var(--accent2); }
+p { margin: 10px 0; }
+code, pre, .code-label, .stream { font-family: var(--mono); }
+code.inline {
+  background: var(--highlight);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: calc(var(--fs) * .84);
+  color: var(--code-fg);
+}
+ul, ol { margin: 8px 0; }
+li { margin: 3px 0; }
+strong { color: var(--ink); }
+a { color: var(--link); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-table); margin: 12px 0; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
+th { background: var(--surface); color: var(--ink); font-weight: 600; }
+tr:nth-child(even) td { background: var(--highlight); }
+td code, th code { white-space: normal; }
+
+/* ---------- callouts ---------- */
+.callout {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent2);
+  background: var(--highlight);
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin: 14px 0;
+  font-size: calc(var(--fs) * .9);
+}
+.callout b { color: var(--accent); }
+
+/* ---------- collapsibles ---------- */
+details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 10px 0;
+  background: var(--highlight);
+}
+details > summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: calc(var(--fs) * .9);
+  user-select: none;
+  list-style: none;
+  font-family: var(--sans);
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "▸ "; color: var(--accent); display: inline-block; transition: transform .15s; }
+details[open] > summary::before { transform: rotate(90deg); }
+details > .dbody { padding: 10px 16px; }
+
+/* ---------- code blocks ---------- */
+.codewrap { position: relative; margin: 14px 0; }
+.codewrap pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: var(--fs-pre);
+  line-height: var(--lh);
+  margin: 0;
+}
+.codewrap pre code { color: var(--code-fg); display: block; }
+.code-label {
+  position: absolute;
+  bottom: 0; right: 0;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 8px 0 0 0;
+  font-size: calc(var(--fs) * .7);
+  padding: 3px 10px;
+  z-index: 2;
+}
+.copy-btn {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: calc(var(--fs) * .72);
+  cursor: pointer;
+  z-index: 3;
+  transition: color .12s, background .12s;
+  font-family: var(--sans);
+}
+.copy-btn:hover { color: var(--ink); background: var(--highlight); }
+.copy-btn.copied { color: var(--ok); border-color: var(--ok); }
+
+/* ---------- event stream blocks ---------- */
+.stream {
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--code-bg);
+  font-size: var(--fs-stream);
+  padding: 12px 16px; overflow-x: auto;
+}
+.stream .row { padding: 1px 4px; }
+.stream .row em { color: var(--accent2); }
+
+/* ---------- toolbar (expand/collapse all) ---------- */
+.toolbar { text-align: right; margin: 4px 0 0; }
+.toolbar button {
+  background: none; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 6px; padding: 5px 11px; font-size: calc(var(--fs) * .78);
+  cursor: pointer; font-family: var(--sans);
+}
+.toolbar button:hover { color: var(--ink); }
+
+/* ---------- fixed top controls bar (zoom + appearance) ---------- */
+.top-controls {
+  position: fixed;
+  top: 3px;                       /* below the reading progress bar */
+  left: var(--sidebar-w);
+  right: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 16px;
+}
+.top-controls .spacer { flex: 1; }
+#zoom-widget {
+  display: flex; align-items: center; gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--muted);
+  font-family: var(--sans);
+}
+#zoom-widget button {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+#zoom-widget button:hover { background: var(--highlight); color: var(--ink); }
+#zoom-val {
+  min-width: 46px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+#zoom-val:hover { text-decoration: underline; }
+#stylebtn {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-family: var(--serif);
+  font-weight: 700;
+  padding: 6px 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+#stylebtn:hover { background: var(--highlight); border-color: var(--accent); }
+#top-btn {
+  position: fixed; right: 22px; bottom: 22px;
+  z-index: 50;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 17px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--shadow);
+  display: none;
+}
+
+/* ---------- appearance settings panel ---------- */
+#stylepanel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 330px; max-width: 92vw;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  z-index: 90;
+  padding: 0;
+}
+#stylepanel[hidden] { display: none; }
+.sp-head {
+  position: sticky; top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 10px;
+}
+.sp-head h2 { margin: 0; font-size: calc(var(--fs) * 1.05); border: 0; padding: 0; }
+.sp-head h2::before { content: ""; }
+#sp-mode {
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 4px 8px; font-size: 12.5px;
+  font-family: var(--sans);
+}
+#sp-close {
+  background: none; border: none; color: var(--muted);
+  font-size: 16px; cursor: pointer; margin-left: auto;
+}
+#sp-close:hover { color: var(--err); }
+
+.sp-group { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.sp-group h3 {
+  margin: 0 0 8px;
+  font-size: calc(var(--fs) * .88);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.sp-group h3::before { content: ""; }
+#sp-modetag {
+  display: inline-block;
+  background: var(--highlight);
+  color: var(--accent2);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+}
+.sp-row { display: flex; align-items: center; margin: 5px 0; }
+.sp-row label { flex: 1; color: var(--ink); font-size: 12.5px; }
+.sp-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 8px; font-size: 11.5px;
+  font-family: var(--mono);
+}
+.sp-row input[type="range"] { width: 110px; }
+.sp-row output {
+  min-width: 46px; text-align: right;
+  color: var(--muted); font-size: 11.5px;
+}
+.sp-colors { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 10px; }
+.sp-colors label { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.sp-colors input[type="color"] { width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); background: none; cursor: pointer; }
+.sp-colors .swatch-label { flex: 1; }
+.sp-colors .hex { font-size: 9.5px; color: var(--muted); font-family: var(--mono); }
+.sp-foot {
+  position: sticky; bottom: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  padding: 10px 16px;
+  display: flex; align-items: center;
+}
+.sp-foot button {
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 14px; font-size: 12.5px; cursor: pointer;
+  font-family: var(--sans);
+}
+.sp-foot button:hover { background: var(--highlight); }
+.sp-foot .spacer { flex: 1; }
+#sp-reset { color: var(--err); border-color: var(--err); }
+
+/* ---------- print ---------- */
+@media print {
+  #sidebar, #topbar, #top-btn, #zoom-widget, #stylebtn, #stylepanel,
+  .copy-btn, .toolbar, #toc-search, #progress, .top-controls { display: none !important; }
+  #content { margin-left: 0; width: auto; }
+  body { background: #fff; color: #111; }
+  details[open] { border-color: #ccc; background: transparent; }
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 900px) {
+  #sidebar { display: none; }
+  #topbar { display: flex; }
+  #content { margin-left: 0; padding: 112px 14px 24px; width: auto; }
+  .top-controls { top: 48px; left: 0; padding: 8px 12px; }
+  #sidebar.open { display: block; width: 280px; box-shadow: 4px 0 18px var(--shadow); }
+  #stylepanel { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div id="progress"><span></span></div>
+
+<!-- ================= SIDEBAR ================= -->
+<nav id="sidebar" aria-label="Table of contents">
+  <div class="side-brand">
+    <span class="tau-mark">τ</span>
+    <span><b>Tau — How Events Work</b><small>an explainer · single-file</small></span>
+  </div>
+  <input id="toc-search" type="text" placeholder="Filter sections…" aria-label="Filter table of contents">
+  <div id="toc"></div>
+  <div id="toc-empty">No sections match.</div>
+</nav>
+
+<!-- ================= TOPBAR (mobile) ================= -->
+<header id="topbar">
+  <button id="menu-btn" aria-label="Open table of contents">☰ Contents</button>
+  <span style="color:var(--ink);font-size:14px;margin-left:10px;font-weight:600;">Tau — How Events Work</span>
+</header>
+
+<!-- ================= CONTENT ================= -->
+<main id="content">
+
+  <div class="top-controls">
+    <div id="zoom-widget" title="Page zoom — click the % to cycle presets">
+      <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+      <span id="zoom-val" title="Click to cycle 1× 1.5× 2× 3× 4× 5×">{{ZOOM_LABEL}}</span>
+      <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+    </div>
+    <span class="spacer"></span>
+    <button id="stylebtn" type="button" aria-expanded="false" aria-controls="stylepanel"
+            aria-label="Appearance settings" title="Appearance — customise the page">Aa</button>
+  </div>
+
+  
+
+  {{BODY}}
+</main>
+
+<!-- ================= FLOATING CONTROLS ================= -->
+<button id="top-btn" title="Back to top" aria-label="Back to top">↑</button>
+
+<!-- ================= APPEARANCE PANEL ================= -->
+<aside id="stylepanel" hidden aria-label="Appearance settings">
+  <div class="sp-head">
+    <h2>Appearance</h2>
+    <select id="sp-mode" aria-label="Colour scheme">
+      <option value="auto">Auto</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+    <button id="sp-close" type="button" aria-label="Close appearance panel">✕</button>
+  </div>
+  <div class="sp-body" id="sp-body"></div>
+  <div class="sp-foot">
+    <button id="sp-reset" type="button">Reset</button>
+    <span class="spacer"></span>
+    <button id="sp-copy" type="button">Copy TOML</button>
+  </div>
+</aside>
+
+<script>
+/* ============================================================
+   TAU EVENTS EXPLAINER — behavior
+   ============================================================ */
+'use strict';
+
+/* ---------- helpers ---------- */
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+const body = document.body;
+
+/* ============================================================
+   1. READING PROGRESS BAR
+   ============================================================ */
+(function () {
+  const bar = $('#progress > span');
+  const sync = () => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = (max > 0 ? (window.scrollY / max) * 100 : 0).toFixed(2) + '%';
+  };
+  window.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+  sync();
+})();
+
+/* ============================================================
+   2. TOC + SCROLL-SPY (keeps the active entry visible)
+   ============================================================ */
+(function () {
+  const h2s = $$('main h2');
+  const toc = $('#toc');
+  let rootLinks = '';
+  let level1 = 0;
+  h2s.forEach(h => {
+    if (!h.id) h.id = 'sec-' + (level1++);
+    const title = h.textContent.replace(/^\§\s*/, '');
+    rootLinks += '<a href="#' + h.id + '" data-target="' + h.id + '">' + title + '</a>';
+    // sub-entries from h3s that belong under each h2
+    let sub = '';
+    let node = h.nextElementSibling;
+    while (node && node.tagName !== 'H2') {
+      if (node.tagName === 'H3') {
+        if (!node.id) node.id = h.id + '-' + (sub.split('lvl2').length);
+        sub += '<a class="lvl2" href="#' + node.id + '" data-target="' + node.id + '">' +
+               node.textContent.replace(/^\▸\s*/, '') + '</a>';
+      }
+      node = node.nextElementSibling;
+    }
+    if (sub) {
+      // keep chapter + its sections visible in the filter together
+      rootLinks += '<div class="chapter" data-head="' + h.id + '">' + sub + '</div>';
+    }
+  });
+  toc.innerHTML = rootLinks;
+
+  let links = [];
+  let targets = [];
+  $$('#toc a').forEach(a => {
+    const el = document.getElementById(a.dataset.target);
+    if (el) { links.push(a); targets.push({ a: a, el: el }); }
+  });
+
+  const setActive = id => {
+    links.forEach(a => a.classList.toggle('active', a.dataset.target === id));
+    const active = links.find(a => a.dataset.target === id);
+    if (active) {
+      const box = active.getBoundingClientRect();
+      const tocBox = toc.getBoundingClientRect();
+      if (box.top < tocBox.top || box.bottom > tocBox.bottom) {
+        active.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  };
+
+  const sync = () => {
+    const line = 110;
+    let current = targets.length ? targets[0].el : null;
+    for (const t of targets) {
+      if (t.el.getBoundingClientRect().top <= line) current = t.el;
+    }
+    if (current) setActive(current.id);
+  };
+  window.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+  sync();
+
+  // ---- TOC filter ----
+  const filter = $('#toc-search');
+  filter.addEventListener('input', () => {
+    const q = filter.value.trim().toLowerCase();
+    let any = false;
+    links.forEach(a => {
+      const hit = !q || a.textContent.toLowerCase().includes(q);
+      a.classList.toggle('hidden', !hit);
+      any = any || hit;
+    });
+    // hide a section group when all of its sub-entries are filtered out
+    $$('#toc .chapter').forEach(ch => {
+      const kids = Array.from(ch.querySelectorAll('a'));
+      const visible = kids.some(a => !a.classList.contains('hidden'));
+      ch.classList.toggle('hidden', !visible);
+      if (!visible) any = false;
+    });
+    $('#toc-empty').style.display = any ? 'none' : 'block';
+  });
+})();
+
+/* ============================================================
+   3. COPY BUTTONS ON CODE BLOCKS
+   ============================================================ */
+(function () {
+  const copyText = async text => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back */ }
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    area.remove();
+    return ok;
+  };
+  $$('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const code = btn.closest('.codewrap').querySelector('pre code');
+      const ok = await copyText(code.textContent);
+      btn.textContent = ok ? '✓ copied' : 'copy failed';
+      btn.classList.toggle('copied', ok);
+      setTimeout(() => { btn.textContent = '⧉ copy'; btn.classList.remove('copied'); }, 1600);
+    });
+  });
+})();
+
+/* ============================================================
+   4. MOBILE DRAWER (+ Esc) / BACK-TO-TOP / EXPAND-ALL
+   ============================================================ */
+(function () {
+  const sidebar = $('#sidebar');
+  const menu = $('#menu-btn');
+  if (menu) menu.addEventListener('click', e => { sidebar.classList.toggle('open'); e.stopPropagation(); });
+  document.addEventListener('click', e => {
+    if (sidebar.classList.contains('open') && !sidebar.contains(e.target)) sidebar.classList.remove('open');
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      sidebar.classList.remove('open');
+      const panel = $('#stylepanel');
+      if (!panel.hidden) panel.hidden = true;
+    }
+  });
+
+  const top = $('#top-btn');
+  window.addEventListener('scroll', () => {
+    top.style.display = window.scrollY > 600 ? 'block' : 'none';
+  }, { passive: true });
+  top.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  $('#expand-all').addEventListener('click', () => $$('details').forEach(d => { d.open = true; }));
+  $('#collapse-all').addEventListener('click', () => $$('details').forEach(d => { d.open = false; }));
+
+  window.addEventListener('beforeprint', () => {
+    $$('details').forEach(d => { d.open = true; });
+  });
+})();
+
+/* ============================================================
+   5. PAGE ZOOM (default 1.5×, presets up to 5×, persisted)
+   ============================================================ */
+(function () {
+  const MIN = 0.5, MAX = 5.0, STEP = 0.25;
+  const PRESETS = [1, 1.5, 2, 3, 4, 5];
+  const out = $('#zoom-out'), inn = $('#zoom-in'), val = $('#zoom-val');
+  let current = {{ZOOM}};
+  try {
+    const saved = parseFloat(localStorage.getItem('tau-events-zoom'));
+    if (saved >= MIN && saved <= MAX) current = saved;
+  } catch (e) {}
+  const round2 = x => Math.round(x * 100) / 100;
+  const apply = () => {
+    const r = round2(current);
+    document.documentElement.style.zoom = String(r);
+    val.textContent = r + '×';
+    try { localStorage.setItem('tau-events-zoom', String(r)); } catch (e) {}
+  };
+  val.addEventListener('click', () => {
+    const i = PRESETS.indexOf(round2(current));
+    current = PRESETS[(i + 1) % PRESETS.length];
+    apply();
+  });
+  inn.addEventListener('click', () => { current = Math.min(MAX, round2(current + STEP)); apply(); });
+  out.addEventListener('click', () => { current = Math.max(MIN, round2(current - STEP)); apply(); });
+  apply();
+})();
+
+/* ============================================================
+   6. APPEARANCE PANEL — edits the CSS custom properties in :root
+      (type, layout, fonts, colours for light + dark, auto mode)
+   ============================================================ */
+(function () {
+  const SPEC = [
+    { table: 'type', title: 'Type', items: [
+      { key: 'fs', cssVar: '--fs', kind: 'size', unit: 'px', min: 12, max: 40, step: 0.5, label: 'Book text' },
+      { key: 'lh', cssVar: '--lh', kind: 'number', unit: '', min: 1.1, max: 2.2, step: 0.01, label: 'Book line height' },
+      { key: 'fs_chrome', cssVar: '--fs-chrome', kind: 'size', unit: 'px', min: 10, max: 26, step: 0.5, label: 'Sidebar & chrome text' },
+      { key: 'lh_chrome', cssVar: '--lh-chrome', kind: 'number', unit: '', min: 1.1, max: 2.2, step: 0.01, label: 'Chrome line height' }
+    ]},
+    { table: 'layout', title: 'Layout', items: [
+      { key: 'sidebar_w', cssVar: '--sidebar-w', kind: 'size', unit: 'px', min: 220, max: 520, step: 4, label: 'Sidebar width' },
+      { key: 'measure', cssVar: '--measure', kind: 'size', unit: '%', min: 40, max: 100, step: 1, label: 'Reading column width' }
+    ]},
+    { table: 'fonts', title: 'Fonts', items: [
+      { key: 'sans', cssVar: '--sans', kind: 'font', label: 'Body (sans stack)' },
+      { key: 'serif', cssVar: '--serif', kind: 'font', label: 'Headings (serif stack)' },
+      { key: 'mono', cssVar: '--mono', kind: 'font', label: 'Code (mono stack)' }
+    ]},
+    { table: 'colors', title: 'Colours', colors: true, items: [
+      { key: 'bg', cssVar: '--bg', kind: 'color', label: 'Page background' },
+      { key: 'surface', cssVar: '--surface', kind: 'color', label: 'Sidebar / chrome' },
+      { key: 'code_bg', cssVar: '--code-bg', kind: 'color', label: 'Code block background' },
+      { key: 'highlight', cssVar: '--highlight', kind: 'color', label: 'Hover / active bg' },
+      { key: 'ink', cssVar: '--ink', kind: 'color', label: 'Body text' },
+      { key: 'muted', cssVar: '--muted', kind: 'color', label: 'Secondary text' },
+      { key: 'code_fg', cssVar: '--code-fg', kind: 'color', label: 'Code text' },
+      { key: 'accent', cssVar: '--accent', kind: 'color', label: 'Accent' },
+      { key: 'accent2', cssVar: '--accent2', kind: 'color', label: 'Secondary accent' },
+      { key: 'line', cssVar: '--line', kind: 'color', label: 'Borders' },
+      { key: 'ok', cssVar: '--ok', kind: 'color', label: 'Success' },
+      { key: 'warn', cssVar: '--warn', kind: 'color', label: 'Warning' },
+      { key: 'err', cssVar: '--err', kind: 'color', label: 'Error' },
+      { key: 'link', cssVar: '--link', kind: 'color', label: 'Links' },
+      { key: 'code_str', cssVar: '--code-str', kind: 'color', label: 'Code strings' },
+      { key: 'code_kw', cssVar: '--code-kw', kind: 'color', label: 'Code keywords' },
+      { key: 'code_com', cssVar: '--code-com', kind: 'color', label: 'Code comments' },
+      { key: 'code_num', cssVar: '--code-num', kind: 'color', label: 'Code numbers' },
+      { key: 'code_fn', cssVar: '--code-fn', kind: 'color', label: 'Code functions' },
+      { key: 'code_type', cssVar: '--code-type', kind: 'color', label: 'Code types' }
+    ]}
+  ];
+
+  const DEFAULTS = {
+    base: {
+      fs: 16, lh: 1.6, fs_chrome: 13.5, lh_chrome: 1.5,
+      sidebar_w: 288, measure: 68,
+      sans: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif',
+      serif: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif',
+      mono: '"JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, "SF Mono", Menlo, monospace'
+    },
+    colors: {
+      light: {
+        bg: '#f7f6f2', surface: '#ece9e0', code_bg: '#f2efe6', highlight: '#ece5d8',
+        ink: '#2b2f36', muted: '#6d7480', code_fg: '#3a3f47', accent: '#b8860b', accent2: '#1d6fb0',
+        line: '#d5d0c2', ok: '#2c8c49', warn: '#b06f1f', err: '#b3373f', link: '#1a5fb4',
+        code_str: '#557d3a', code_kw: '#8a3fb2', code_com: '#9aa08f', code_num: '#b3495a',
+        code_fn: '#1a6fb4', code_type: '#8a3fb2'
+      },
+      dark: {
+        bg: '#0f1117', surface: '#161b26', code_bg: '#1a1f2e', highlight: '#20263a',
+        ink: '#d6dde8', muted: '#8b93a3', code_fg: '#c9d4e0', accent: '#e8b339', accent2: '#4f9cf0',
+        line: '#2a3042', ok: '#7ed491', warn: '#e5a558', err: '#e5606b', link: '#6fb3ff',
+        code_str: '#a8cf8f', code_kw: '#d59fff', code_com: '#6b7688', code_num: '#dfa1a1',
+        code_fn: '#66b8ff', code_type: '#d599e0'
+      }
+    }
+  };
+
+  const STORE = '{{STORE}}';
+  const INIT_MODE = '{{MODE}}';
+  const root = document.documentElement;
+  const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const copyInto = (target, source) => {
+    Object.keys(target).forEach(k => delete target[k]);
+    Object.entries(clone(source)).forEach(([k, v]) => { target[k] = v; });
+  };
+
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { saved = {}; }
+
+  const state = {
+    mode: ['auto', 'light', 'dark'].includes(saved.mode) ? saved.mode : INIT_MODE,
+    base: Object.assign(clone(DEFAULTS.base), saved.base || {}),
+    colors: {
+      light: Object.assign(clone(DEFAULTS.colors.light), (saved.colors || {}).light || {}),
+      dark: Object.assign(clone(DEFAULTS.colors.dark), (saved.colors || {}).dark || {})
+    }
+  };
+
+  const resolved = () => state.mode === 'auto'
+    ? (darkQuery.matches ? 'dark' : 'light')
+    : state.mode;
+
+  const cssVal = (item, value) => item.unit === '%' ? value + '%'
+    : item.unit === 'px' ? value + 'px'
+    : String(value);
+
+  const apply = () => {
+    if (state.mode === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', state.mode);
+
+    const mode = resolved();
+    SPEC.forEach(group => group.items.forEach(item => {
+      const value = item.kind === 'color' ? state.colors[mode][item.key] : state.base[item.key];
+      if (value === undefined || value === null || value === '') {
+        root.style.removeProperty(item.cssVar);
+      } else if (item.kind === 'size' || item.kind === 'number') {
+        root.style.setProperty(item.cssVar, cssVal(item, value));
+      } else {
+        root.style.setProperty(item.cssVar, String(value));
+      }
+    }));
+  };
+
+  const persist = () => {
+    try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* private mode */ }
+  };
+
+  /* ---- build the panel ---- */
+  const panel = $('#stylepanel');
+  const button = $('#stylebtn');
+  const panelBody = $('#sp-body');
+  const modeSelect = $('#sp-mode');
+  const refs = {};
+
+  const hex6 = value => {
+    let v = String(value || '').trim().replace('#', '');
+    if (v.length === 3) v = v.split('').map(c => c + c).join('');
+    return '#' + v.slice(0, 6).padStart(6, '0');
+  };
+
+  const addGroup = group => {
+    const wrap = document.createElement('div');
+    wrap.className = 'sp-group';
+    const title = document.createElement('h3');
+    title.textContent = group.title;
+    if (group.colors) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.id = 'sp-modetag';
+      title.appendChild(tag);
+    }
+    wrap.appendChild(title);
+
+    if (group.colors) {
+      const grid = document.createElement('div');
+      grid.className = 'sp-colors';
+      group.items.forEach(item => {
+        const label = document.createElement('label');
+        const swatch = document.createElement('input');
+        swatch.type = 'color';
+        swatch.title = item.label + '  (' + item.cssVar + ')';
+        swatch.setAttribute('aria-label', item.label);
+        const name = document.createElement('span');
+        name.className = 'swatch-label';
+        name.textContent = item.label;
+        const hex = document.createElement('span');
+        hex.className = 'hex';
+        label.append(swatch, name, hex);
+        grid.appendChild(label);
+
+        swatch.addEventListener('input', () => {
+          state.colors[resolved()][item.key] = swatch.value;
+          hex.textContent = swatch.value;
+          apply();
+          persist();
+        });
+        refs[item.key] = { swatch: swatch, hex: hex };
+      });
+      wrap.appendChild(grid);
+      panelBody.appendChild(wrap);
+      return;
+    }
+
+    group.items.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'sp-row';
+      const label = document.createElement('label');
+      label.textContent = item.label;
+      row.appendChild(label);
+
+      if (item.kind === 'font') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.spellcheck = false;
+        row.appendChild(input);
+        input.addEventListener('change', () => {
+          const value = input.value.trim();
+          if (value) {
+            state.base[item.key] = value;
+            apply();
+            persist();
+          }
+        });
+        refs[item.key] = { input: input };
+      } else {
+        const out = document.createElement('output');
+        row.appendChild(out);
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.min = item.min;
+        input.max = item.max;
+        input.step = item.step;
+        input.setAttribute('aria-label', item.label);
+        row.appendChild(input);
+        input.addEventListener('input', () => {
+          state.base[item.key] = Number(input.value);
+          out.textContent = input.value + (item.unit || '');
+          apply();
+          persist();
+        });
+        refs[item.key] = { input: input, out: out };
+      }
+      wrap.appendChild(row);
+    });
+
+    panelBody.appendChild(wrap);
+  };
+
+  SPEC.forEach(addGroup);
+
+  const refresh = () => {
+    if (modeSelect.value !== state.mode) modeSelect.value = state.mode;
+    const mode = resolved();
+    const modeTag = $('#sp-modetag');
+    if (modeTag) modeTag.textContent = mode;
+    if (button) button.title = 'Appearance — editing ' + mode + ' colours';
+
+    SPEC.forEach(group => group.items.forEach(item => {
+      const ref = refs[item.key];
+      if (!ref) return;
+      if (item.kind === 'color') {
+        const value = state.colors[mode][item.key] || '#000000';
+        ref.swatch.value = hex6(value);
+        ref.hex.textContent = String(value);
+      } else if (item.kind === 'font') {
+        ref.input.value = state.base[item.key] || '';
+      } else {
+        const value = state.base[item.key];
+        ref.input.value = value;
+        ref.out.textContent = value + (item.unit || '');
+      }
+    }));
+  };
+
+  const reopen = () => { apply(); refresh(); };
+
+  modeSelect.value = state.mode;
+  modeSelect.addEventListener('change', () => {
+    state.mode = modeSelect.value;
+    reopen();
+    persist();
+  });
+
+  if (darkQuery.addEventListener) {
+    darkQuery.addEventListener('change', () => { if (state.mode === 'auto') reopen(); });
+  }
+
+  $('#sp-reset').addEventListener('click', () => {
+    copyInto(state.base, DEFAULTS.base);
+    copyInto(state.colors.light, DEFAULTS.colors.light);
+    copyInto(state.colors.dark, DEFAULTS.colors.dark);
+    state.mode = INIT_MODE;
+    try { localStorage.removeItem(STORE); } catch (e) { /* ignore */ }
+    reopen();
+  });
+
+  const colorItems = SPEC.filter(g => g.colors)[0].items;
+
+  const toToml = () => {
+    const lines = [
+      '# generated by the appearance panel in EXPLAINER_EVENTS.html',
+      '# bake it in by pasting into a <style> :root { … } block, or seed a',
+      '# book_theme.toml for a build step.',
+      '',
+      'mode = "' + state.mode + '"',
+      ''
+    ];
+    SPEC.forEach(group => {
+      if (group.colors) return;
+      lines.push('[' + group.table + ']');
+      group.items.forEach(item => {
+        const value = state.base[item.key];
+        lines.push(item.key + ' = ' + (item.kind === 'font' ? JSON.stringify(value) : value));
+      });
+      lines.push('');
+    });
+    lines.push('[colors]');
+    colorItems.forEach(item => lines.push(item.key + ' = "' + state.colors.light[item.key] + '"'));
+    lines.push('');
+    lines.push('[dark]');
+    colorItems.forEach(item => lines.push(item.key + ' = "' + state.colors.dark[item.key] + '"'));
+    lines.push('');
+    return lines.join('\n');
+  };
+
+  const copyText = async text => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back */ }
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    area.remove();
+    return ok;
+  };
+
+  const copyBtn = $('#sp-copy');
+  copyBtn.addEventListener('click', async () => {
+    const ok = await copyText(toToml());
+    copyBtn.textContent = ok ? 'Copied' : 'Copy failed';
+    setTimeout(() => { copyBtn.textContent = 'Copy TOML'; }, 1600);
+  });
+
+  const toggle = open => {
+    panel.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+  };
+  button.addEventListener('click', () => toggle(panel.hidden));
+  $('#sp-close').addEventListener('click', () => toggle(false));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !panel.hidden) toggle(false);
+  });
+
+  apply();
+  refresh();
+})();
+
+/* ============================================================
+   7. MINIMAL SYNTAX HIGHLIGHTING (client-side, no library)
+   ============================================================ */
+(function () {
+  const rules = {
+    'lang-python': [
+      [/(^\s*)(#.*$)/gm, "$1<span class='tok c'>$2</span>"],
+      [/\b(def|class|return|yield|from|import|async|await|for|while|if|elif|else|try|except|finally|with|as|in|is|not|and|or|None|True|False|lambda|pass|raise|break|continue|global|del)\b/g, "<span class='tok k'>$1</span>"],
+      [/\b(self|cls)\b/g, "<span class='tok s'>$1</span>"],
+      [/\b(\d+)\b/g, "<span class='tok n'>$1</span>"],
+      [/("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g, "<span class='tok t'>$1</span>"],
+      [/\b([A-Za-z_][A-Za-z0-9_]*)(?=\()/g, "<span class='tok f'>$1</span>"]
+    ],
+    'lang-bash': [
+      [/(^\s*)(#.*$)/gm, "$1<span class='tok c'>$2</span>"],
+      [/\b(if|then|else|elif|fi|for|while|until|do|done|case|esac|function|in|local|export|return|break|continue|exit|null|true|false)\b/g, "<span class='tok k'>$1</span>"],
+      [/\b(\d+)\b/g, "<span class='tok n'>$1</span>"],
+      [/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, "<span class='tok t'>$1</span>"]
+    ],
+    'lang-json': [
+      [/\b(true|false|null)\b/g, "<span class='tok k'>$1</span>"],
+      [/\b(-?\d+(?:\.\d+)?)\b/g, "<span class='tok n'>$1</span>"],
+      [/("(?:\\.|[^"\\])*")/g, "<span class='tok t'>$1</span>"]
+    ],
+    'lang-js': [
+      [/(^\s*)(\/\/.*$)/gm, "$1<span class='tok c'>$2</span>"],
+      [/\/\*[\s\S]*?\*\//g, "<span class='tok c'>$&</span>"],
+      [/\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|typeof|new|async|await|try|catch|finally|throw|class|extends|import|export|from|of|in|null|undefined|true|false|this|super)\b/g, "<span class='tok k'>$1</span>"],
+      [/\b(\d+)\b/g, "<span class='tok n'>$1</span>"],
+      [/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g, "<span class='tok t'>$1</span>"]
+    ],
+    'lang-text': [
+      [/(^[A-Za-z_]+)(?=\s*$)/gm, "<span class='tok k'>$1</span>"]
+    ]
+  };
+  const colors = {
+    c: 'var(--code-com)', k: 'var(--code-kw)', s: 'var(--accent2)',
+    n: 'var(--code-num)', t: 'var(--code-str)', f: 'var(--code-fn)'
+  };
+  let styleOnce = null;
+  $$('pre code').forEach(code => {
+    const lang = Object.keys(rules).find(l => code.classList.contains(l));
+    if (!lang) return;
+    let text = code.textContent;
+    rules[lang].forEach(pair => { text = text.replace(pair[0], pair[1]); });
+    code.innerHTML = text;
+    if (!styleOnce) {
+      styleOnce = document.createElement('style');
+      Object.keys(colors).forEach(cls => {
+        styleOnce.textContent += '.tok.' + cls + ' { color: ' + colors[cls] + '; }';
+      });
+      document.head.appendChild(styleOnce);
+    }
+  });
+})();
+</script>
+</body>
+</html>
